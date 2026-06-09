@@ -1,0 +1,25 @@
+# Environment and secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Output files
+output/
+*.mp3
+*.mp4
+*.txt
+study_guide.md
+
+# Whisper model cache
+# (downloaded automatically, no need to commit)
+
+# IDE
+.vscode/
+.idea/

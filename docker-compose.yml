@@ -1,0 +1,10 @@
+# Run with: docker compose run pipeline "VIDEO_URL"
+# Or:       docker compose run pipeline "VIDEO_URL" --skip-analysis
+
+services:
+  pipeline:
+    build: .
+    env_file: .env
+    volumes:
+      - ./output:/output            # Access output files on your host machine
+      - ./instructions:/app/instructions  # Use custom instructions without rebuilding
