@@ -67,16 +67,23 @@ def _try_ytdlp(url: str, config: PipelineConfig) -> Path:
     """Attempt download using yt-dlp."""
     output_template = str(config.output_dir / "%(title)s.%(ext)s")
 
-    result = subprocess.run(
-        [
+    cmd = [
             "yt-dlp",
             "--no-playlist",
             "--restrict-filenames",
             "--socket-timeout", str(config.download_timeout),
             "-o", output_template,
-            "--print", "after_move:filepath",
-            url,
-        ],
+            "--print", "after_move:filepath"
+    ]
+    
+    if config.referer:
+        cmd += ["--add-header", f"Referer:{config.referer}"]
+        cmd += ["--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"]
+    
+    cmd.append(url)
+
+    result = subprocess.run(
+        cmd,
         capture_output=True,
         text=True,
         timeout=config.download_timeout + 30,
@@ -98,17 +105,22 @@ def _try_curl(url: str, config: PipelineConfig) -> Path:
     safe_name = re.sub(r"[^\w.\-]", "_", raw_name)
     output_path = config.output_dir / safe_name
 
+    cmd = [
+        "curl", "-L",
+        "--max-time", str(config.download_timeout),
+        "--retry", "2",
+    ]
+    
+    if config.referer:
+        cmd += ["--referer", config.referer]
+        cmd += ["--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"]
+    
+    cmd += ["-o", str(output_path), url]
+
     result = subprocess.run(
-        [
-            "curl", "-L",
-            "--max-time", str(config.download_timeout),
-            "--retry", "2",
-            "-o", str(output_path),
-            url,
-        ],
+        cmd,
         capture_output=True,
         text=True,
-        timeout=config.download_timeout + 30,
     )
 
     if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size == 0:

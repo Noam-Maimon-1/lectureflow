@@ -63,6 +63,10 @@ Examples:
         help="Keep the video file after converting to audio",
     )
     parser.add_argument(
+        "--referer", type=str, default=None,
+        help="Referer header for the downloader (e.g. https://moodle.bgu.ac.il/)",
+    )
+    parser.add_argument(
         "--log-level", type=str, default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging verbosity (default: INFO)",
@@ -95,7 +99,9 @@ def main():
         config.output_dir = Path(args.output_dir)
     if args.keep_video:
         config.keep_video = True
-
+    if args.referer:
+        config.referer = args.referer
+        
     # Validate before running
     errors = config.validate()
     if errors:

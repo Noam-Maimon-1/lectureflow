@@ -21,13 +21,14 @@ class PipelineConfig:
     # Downloader
     download_retries: int = 3
     download_timeout: int = 300  # seconds
+    referer: str | None = None  # Optional Referer header for downloads
 
     # Transcriber
     whisper_model: str = "base"  # tiny | base | small | medium | large
 
     # Analyzer (Claude API)
     anthropic_api_key: str | None = None
-    claude_model: str = "claude-sonnet-4-20250514"
+    claude_model: str = "claude-sonnet-4-5"
     claude_max_tokens: int = 8000
 
     # Pipeline behavior
@@ -47,9 +48,10 @@ class PipelineConfig:
             instructions_file=Path(f) if (f := os.getenv("LP_INSTRUCTIONS_FILE")) else None,
             download_retries=int(os.getenv("LP_DOWNLOAD_RETRIES", "3")),
             download_timeout=int(os.getenv("LP_DOWNLOAD_TIMEOUT", "300")),
+            referer=os.getenv("LP_REFERER"),
             whisper_model=os.getenv("LP_WHISPER_MODEL", "base"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-            claude_model=os.getenv("LP_CLAUDE_MODEL", "claude-sonnet-4-20250514"),
+            claude_model=os.getenv("LP_CLAUDE_MODEL", "claude-sonnet-4-5"),
             claude_max_tokens=int(os.getenv("LP_CLAUDE_MAX_TOKENS", "8000")),
             keep_video=os.getenv("LP_KEEP_VIDEO", "false").lower() == "true",
             skip_analysis=os.getenv("LP_SKIP_ANALYSIS", "false").lower() == "true",
