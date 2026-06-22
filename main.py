@@ -67,6 +67,10 @@ Examples:
         help="Referer header for the downloader (e.g. https://moodle.bgu.ac.il/)",
     )
     parser.add_argument(
+        "--no-html", action="store_true",
+        help="Skip HTML rendering (only JSON and Markdown outputs are saved)",
+    )
+    parser.add_argument(
         "--log-level", type=str, default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging verbosity (default: INFO)",
@@ -101,7 +105,9 @@ def main():
         config.keep_video = True
     if args.referer:
         config.referer = args.referer
-        
+    if args.no_html:
+        config.skip_html = True
+
     # Validate before running
     errors = config.validate()
     if errors:

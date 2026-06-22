@@ -22,6 +22,7 @@ from src.downloader import download_video, DownloadError
 from src.converter import extract_audio, ConversionError
 from src.transcriber import transcribe, TranscriptionError
 from src.analyzer import analyze, AnalysisError
+from src.renderer import render_html, RenderError
 
 logger = logging.getLogger("lecture_pipeline")
 
@@ -121,7 +122,7 @@ def run(url: str, config: PipelineConfig) -> PipelineResult:
     else:
         try:
             t0 = time.time()
-            result.study_guide_path = analyze(
+            result.study_guide_path, parsed = analyze(
                 transcript, config, output_dir=config.output_dir
             )
             result.stage_durations["analyze"] = time.time() - t0
@@ -129,6 +130,15 @@ def run(url: str, config: PipelineConfig) -> PipelineResult:
             result.error = str(e)
             logger.error("Pipeline failed at ANALYZE stage: %s", e)
             return result
+
+        # ── Stage 5: Render HTML ──────────────────────────────────
+        if not config.skip_html:
+            try:
+                t0 = time.time()
+                render_html(parsed, config.output_dir)
+                result.stage_durations["render"] = time.time() - t0
+            except RenderError as e:
+                logger.warning("HTML render failed (non-fatal): %s", e)
 
     # ── Done ─────────────────────────────────────────────────────
     result.success = True

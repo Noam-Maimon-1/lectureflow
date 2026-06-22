@@ -29,11 +29,12 @@ class PipelineConfig:
     # Analyzer (Claude API)
     anthropic_api_key: str | None = None
     claude_model: str = "claude-sonnet-4-5"
-    claude_max_tokens: int = 8000
+    claude_max_tokens: int = 16000
 
     # Pipeline behavior
     keep_video: bool = False
     skip_analysis: bool = False  # True = stop after transcription
+    skip_html: bool = False       # True = skip HTML rendering
 
     @classmethod
     def from_env(cls) -> "PipelineConfig":
@@ -52,9 +53,10 @@ class PipelineConfig:
             whisper_model=os.getenv("LP_WHISPER_MODEL", "base"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
             claude_model=os.getenv("LP_CLAUDE_MODEL", "claude-sonnet-4-5"),
-            claude_max_tokens=int(os.getenv("LP_CLAUDE_MAX_TOKENS", "8000")),
+            claude_max_tokens=int(os.getenv("LP_CLAUDE_MAX_TOKENS", "16000")),
             keep_video=os.getenv("LP_KEEP_VIDEO", "false").lower() == "true",
             skip_analysis=os.getenv("LP_SKIP_ANALYSIS", "false").lower() == "true",
+            skip_html=os.getenv("LP_SKIP_HTML", "false").lower() == "true",
         )
 
     def validate(self) -> list[str]:
