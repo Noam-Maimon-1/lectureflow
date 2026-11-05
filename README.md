@@ -1,5 +1,9 @@
 # Lecture Pipeline
 
+[![CI](https://github.com/Noam-Maimon-1/lectureflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Noam-Maimon-1/lectureflow/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 An ETL pipeline that transforms university lecture recordings into AI-generated study guides.
 
 **Extract** a lecture video from a URL → **Transform** it through audio conversion and speech-to-text transcription → **Load** the transcript into Claude for structured study material.
@@ -7,17 +11,31 @@ An ETL pipeline that transforms university lecture recordings into AI-generated 
 ## Architecture
 
 ```
-┌──────────┐    ┌──────────┐    ┌────────────┐    ┌──────────┐
-│ Download │───>│ Convert  │───>│ Transcribe │───>│ Analyze  │
-│ (yt-dlp) │    │ (ffmpeg) │    │ (Whisper)  │    │ (Claude) │
-└──────────┘    └──────────┘    └────────────┘    └──────────┘
+┌──────────┐    ┌──────────┐    ┌────────────┐    ┌──────────┐    ┌──────────┐
+│ Download │───>│ Convert  │───>│ Transcribe │───>│ Analyze  │───>│  Render  │
+│ (yt-dlp) │    │ (ffmpeg) │    │ (Whisper)  │    │ (Claude) │    │  (HTML)  │
+└──────────┘    └──────────┘    └────────────┘    └──────────┘    └──────────┘
    EXTRACT       TRANSFORM 1     TRANSFORM 2        LOAD
 
-Input: Video URL
-Output: MP3 audio + text transcript + study guide (Markdown)
+Input:  Video URL, or a local video/audio file (--local-file)
+Output: MP3 audio, text transcript, and a study guide as JSON, Markdown and HTML
 ```
 
 Each stage is an independent module in `src/` — testable, replaceable, and extensible on its own.
+
+## Output
+
+Each run writes to the output directory (default `~/lecture_pipeline_output`):
+
+| File | Contents |
+|---|---|
+| `<lecture>.mp3` | Extracted audio (128 kbps — enough for speech) |
+| `<lecture>.txt` | Raw Whisper transcript |
+| `study_guide.json` | Structured guide: summary, topics → subtopics, key terms, misconceptions, review Q&A, lecture notes |
+| `study_guide.md` | The same guide rendered as Markdown |
+| `study_guide.html` | Self-contained page (no external assets) with a sidebar table of contents, light/dark toggle and collapsible review answers |
+
+Claude is instructed to return JSON against a fixed schema ([instructions/default.txt](instructions/default.txt)). The analyzer validates the required keys and, if parsing fails, saves the raw response to `study_guide_raw.txt` for debugging.
 
 ## Quick Start
 
@@ -29,8 +47,8 @@ Each stage is an independent module in `src/` — testable, replaceable, and ext
 ### Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/lecture-pipeline.git
-cd lecture-pipeline
+git clone https://github.com/Noam-Maimon-1/lectureflow.git
+cd lectureflow
 
 pip install -r requirements.txt
 
@@ -52,6 +70,15 @@ python main.py "URL" --whisper-model medium
 
 # Custom study instructions:
 python main.py "URL" --instructions instructions/my_prompt.txt
+
+# Process a recording already on disk (your file is never deleted):
+python main.py --local-file ~/Downloads/lecture.mp4
+
+# CDN-hosted videos that need a Referer (e.g. Moodle):
+python main.py "URL" --referer https://moodle.example.ac.il/
+
+# Skip the HTML page (JSON + Markdown only):
+python main.py "URL" --no-html
 
 # Using Make:
 make process URL="https://..."
@@ -75,16 +102,20 @@ lecture-pipeline/
 │   ├── downloader.py        # EXTRACT — video download with retries
 │   ├── converter.py         # TRANSFORM — video to audio (ffmpeg)
 │   ├── transcriber.py       # TRANSFORM — audio to text (Whisper)
-│   ├── analyzer.py          # LOAD — transcript to Claude API
+│   ├── analyzer.py          # LOAD — transcript to Claude API, JSON validation
+│   ├── renderer.py          # Study guide JSON to self-contained HTML
 │   └── pipeline.py          # Orchestrator — sequences all stages
 ├── tests/
-│   └── test_pipeline.py     # Unit tests for each module
+│   └── test_pipeline.py     # Unit tests (ffmpeg, yt-dlp, Whisper and Claude are mocked)
+├── .github/workflows/ci.yml # Lint + tests on Python 3.11–3.13
 ├── instructions/
 │   └── default.txt          # Default study prompt for Claude
 ├── Dockerfile
 ├── docker-compose.yml
 ├── Makefile
-├── requirements.txt
+├── pyproject.toml           # Ruff and pytest configuration
+├── requirements.txt         # Runtime dependencies
+├── requirements-dev.txt     # pytest + ruff (all CI needs)
 └── .env.example
 ```
 
@@ -103,10 +134,12 @@ All settings can be controlled via environment variables (see `.env.example`) or
 ## Testing
 
 ```bash
-make test
-# or
-python -m pytest tests/ -v
+pip install -r requirements-dev.txt
+make test        # or: python -m pytest -v
+ruff check .
 ```
+
+The tests mock every external dependency (subprocess calls to ffmpeg/yt-dlp/curl, Whisper, and the Anthropic client), so they run in well under a second and don't need a GPU or an API key. CI runs lint and tests on every push and pull request.
 
 ## Future Roadmap
 
@@ -115,3 +148,7 @@ python -m pytest tests/ -v
 - [ ] **State tracking**: SQLite log of processed lectures for idempotency
 - [ ] **Parallel processing**: Batch-process multiple lectures concurrently
 - [ ] **Notification**: Send study guide via email/Telegram when processing completes
+
+## License
+
+[MIT](LICENSE)
