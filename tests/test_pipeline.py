@@ -9,13 +9,12 @@ Run with: python -m pytest tests/ -v
 
 import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.config import PipelineConfig
 from src.pipeline import PipelineResult
-
 
 # ── Config tests ─────────────────────────────────────────────────
 
@@ -174,7 +173,7 @@ class TestConverter:
 
     @patch("src.converter.subprocess.run")
     def test_extract_audio_raises_on_failure(self, mock_run, tmp_path):
-        from src.converter import extract_audio, ConversionError
+        from src.converter import ConversionError, extract_audio
 
         video = tmp_path / "lecture.mp4"
         video.write_bytes(b"fake")
@@ -223,107 +222,116 @@ class TestDownloader:
         assert result == expected
 
 
-    class TestAnalyzer:
-        """Analyzer should parse Claude JSON, validate keys, and write outputs."""
+# ── Analyzer tests ───────────────────────────────────────────────
 
-        def _make_client(self, text: str):
-            from unittest.mock import MagicMock
+class TestAnalyzer:
+    """Analyzer should parse Claude JSON, validate keys, and write outputs."""
 
-            response = MagicMock()
-            response.content = [MagicMock(text=text)]
+    def _make_client(self, text: str):
+        from unittest.mock import MagicMock
 
-            client = MagicMock()
-            messages = MagicMock()
-            messages.create.return_value = response
-            client.messages = messages
-            return client
+        response = MagicMock()
+        response.content = [MagicMock(text=text)]
 
-        def test_analyzer_valid_json(self, tmp_path):
-            from src.analyzer import analyze
+        client = MagicMock()
+        messages = MagicMock()
+        messages.create.return_value = response
+        client.messages = messages
+        return client
 
-            # Prepare a valid JSON response with required keys
-            payload = {
-                "title": "Intro to Testing",
-                "summary": "This lecture covers testing basics.",
-                "topics": [{"title": "Unit tests", "subtopics": ["what", "why"]}],
-                "review_questions": [{"question": "What is a unit test?", "answer": "A small test."}],
-                "key_terms_glossary": {"unit test": "isolated test"},
-            }
+    def test_analyzer_valid_json(self, tmp_path):
+        from src.analyzer import analyze
 
-            import types, sys
-            client = self._make_client(text=__import__("json").dumps(payload))
-            fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
+        # Prepare a valid JSON response with required keys
+        payload = {
+            "title": "Intro to Testing",
+            "summary": "This lecture covers testing basics.",
+            "topics": [{"title": "Unit tests", "subtopics": ["what", "why"]}],
+            "review_questions": [{"question": "What is a unit test?", "answer": "A small test."}],
+            "key_terms_glossary": {"unit test": "isolated test"},
+        }
 
-            with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
-                config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
-                (config.instructions_file).write_text("instructions")
-                md_path = analyze("transcript text", config, output_dir=tmp_path)
+        import sys
+        import types
+        client = self._make_client(text=__import__("json").dumps(payload))
+        fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
 
-            assert (tmp_path / "study_guide.json").exists()
-            assert (tmp_path / "study_guide.md").exists()
-            text = (tmp_path / "study_guide.md").read_text(encoding="utf-8")
-            assert "# Intro to Testing" in text
-            assert "1. What is a unit test?" in text
-            assert "Answer" in text
+        with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
+            config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
+            (config.instructions_file).write_text("instructions")
+            md_path, parsed = analyze("transcript text", config, output_dir=tmp_path)
 
-        def test_analyzer_missing_keys(self, tmp_path):
-            from src.analyzer import analyze, AnalysisError
+        assert md_path == tmp_path / "study_guide.md"
+        assert parsed["title"] == "Intro to Testing"
+        assert (tmp_path / "study_guide.json").exists()
+        assert (tmp_path / "study_guide.md").exists()
+        text = (tmp_path / "study_guide.md").read_text(encoding="utf-8")
+        assert "# Intro to Testing" in text
+        assert "1. What is a unit test?" in text
+        assert "Answer" in text
 
-            payload = {"title": "No Summary"}  # missing summary, topics, review_questions
+    def test_analyzer_missing_keys(self, tmp_path):
+        from src.analyzer import AnalysisError, analyze
 
-            import types, sys
-            client = self._make_client(text=__import__("json").dumps(payload))
-            fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
+        payload = {"title": "No Summary"}  # missing summary, topics, review_questions
 
-            with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
-                config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
-                (config.instructions_file).write_text("instructions")
-                with pytest.raises(AnalysisError) as exc:
-                    analyze("t", config, output_dir=tmp_path)
+        import sys
+        import types
+        client = self._make_client(text=__import__("json").dumps(payload))
+        fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
 
-            assert "missing required keys" in str(exc.value)
+        with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
+            config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
+            (config.instructions_file).write_text("instructions")
+            with pytest.raises(AnalysisError) as exc:
+                analyze("t", config, output_dir=tmp_path)
 
-        def test_analyzer_malformed_json(self, tmp_path):
-            from src.analyzer import analyze, AnalysisError
+        assert "missing required keys" in str(exc.value)
 
-            bad_text = "{ not valid json..."
+    def test_analyzer_malformed_json(self, tmp_path):
+        from src.analyzer import AnalysisError, analyze
 
-            import types, sys
-            client = self._make_client(text=bad_text)
-            fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
+        bad_text = "{ not valid json..."
 
-            with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
-                config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
-                (config.instructions_file).write_text("instructions")
-                with pytest.raises(AnalysisError):
-                    analyze("t", config, output_dir=tmp_path)
+        import sys
+        import types
+        client = self._make_client(text=bad_text)
+        fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
 
-            # Raw file should be saved
-            assert (tmp_path / "study_guide_raw.txt").exists()
+        with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
+            config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
+            (config.instructions_file).write_text("instructions")
+            with pytest.raises(AnalysisError):
+                analyze("t", config, output_dir=tmp_path)
 
-        def test_analyzer_strips_code_fences(self, tmp_path):
-            from src.analyzer import analyze
+        # Raw file should be saved
+        assert (tmp_path / "study_guide_raw.txt").exists()
 
-            payload = {
-                "title": "Fenced JSON Lecture",
-                "summary": "Testing code fence stripping.",
-                "topics": [{"title": "Code Fences", "subtopics": []}],
-                "review_questions": [{"question": "What are fences?", "answer": "Backtick wrappers."}],
-            }
+    def test_analyzer_strips_code_fences(self, tmp_path):
+        from src.analyzer import analyze
 
-            import types, sys, json
-            fenced_text = "```json\n" + json.dumps(payload) + "\n```"
-            client = self._make_client(text=fenced_text)
-            fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
+        payload = {
+            "title": "Fenced JSON Lecture",
+            "summary": "Testing code fence stripping.",
+            "topics": [{"title": "Code Fences", "subtopics": []}],
+            "review_questions": [{"question": "What are fences?", "answer": "Backtick wrappers."}],
+        }
 
-            with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
-                config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
-                (config.instructions_file).write_text("instructions")
-                _, parsed = analyze("transcript text", config, output_dir=tmp_path)
+        import json
+        import sys
+        import types
+        fenced_text = "```json\n" + json.dumps(payload) + "\n```"
+        client = self._make_client(text=fenced_text)
+        fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
 
-            assert parsed["title"] == "Fenced JSON Lecture"
-            assert (tmp_path / "study_guide.json").exists()
-            assert (tmp_path / "study_guide.md").exists()
+        with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
+            config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
+            (config.instructions_file).write_text("instructions")
+            _, parsed = analyze("transcript text", config, output_dir=tmp_path)
+
+        assert parsed["title"] == "Fenced JSON Lecture"
+        assert (tmp_path / "study_guide.json").exists()
+        assert (tmp_path / "study_guide.md").exists()
 
 
 # ── Renderer tests ───────────────────────────────────────────────────────────
@@ -349,7 +357,7 @@ class TestRenderer:
         assert "My Test Lecture" in text
 
     def test_renderer_missing_title_raises(self, tmp_path):
-        from src.renderer import render_html, RenderError
+        from src.renderer import RenderError, render_html
 
         with pytest.raises(RenderError):
             render_html({}, tmp_path)
