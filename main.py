@@ -36,10 +36,21 @@ Examples:
 
   # Use your own instructions for how Claude should process it:
   python main.py "URL" --instructions my_instructions.txt
+
+  # Process a video already on disk (skips the download stage):
+  python main.py --local-file /path/to/lecture.mp4
         """,
     )
 
-    parser.add_argument("url", help="URL of the lecture video to process")
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument(
+        "url", nargs="?", default=None,
+        help="URL of the lecture video to process",
+    )
+    source_group.add_argument(
+        "--local-file", type=str, default=None,
+        help="Path to a local video file to process (skips the download stage)",
+    )
 
     parser.add_argument(
         "--skip-analysis", action="store_true",
@@ -110,13 +121,15 @@ def main():
 
     # Validate before running
     errors = config.validate()
+    if args.local_file and not Path(args.local_file).is_file():
+        errors.append(f"Local file not found: {args.local_file}")
     if errors:
         for err in errors:
             print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
 
     # Run the pipeline
-    result = pipeline.run(args.url, config)
+    result = pipeline.run(args.url, config, local_file=args.local_file)
 
     sys.exit(0 if result.success else 1)
 

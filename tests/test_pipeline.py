@@ -78,6 +78,59 @@ class TestPipelineResult:
         assert "boom" in result.summary()
 
 
+# ── Pipeline orchestration tests ───────────────────────────────────
+
+class TestPipelineLocalFile:
+    """Pipeline should skip the download stage when a local file is provided."""
+
+    @patch("src.pipeline.download_video")
+    @patch("src.pipeline.transcribe")
+    @patch("src.pipeline.extract_audio")
+    def test_local_file_skips_download(self, mock_extract, mock_transcribe, mock_download, tmp_path):
+        from src.pipeline import run
+
+        local_video = tmp_path / "lecture.mp4"
+        local_video.write_bytes(b"fake video content")
+
+        audio_path = tmp_path / "lecture.mp3"
+        mock_extract.return_value = audio_path
+        mock_transcribe.return_value = ("transcript text", tmp_path / "lecture.txt")
+
+        config = PipelineConfig(skip_analysis=True, output_dir=tmp_path)
+        result = run(None, config, local_file=str(local_video))
+
+        assert result.success is True
+        assert result.download_skipped is True
+        assert result.video_path == local_video
+        assert "download" not in result.stage_durations
+
+        mock_download.assert_not_called()
+        # The user's own file must never be deleted, even when keep_video is False.
+        assert config.keep_video is False
+        mock_extract.assert_called_once_with(local_video, keep_video=True)
+
+    @patch("src.pipeline.transcribe")
+    @patch("src.pipeline.download_video")
+    def test_local_file_is_not_deleted_after_conversion(self, mock_download, mock_transcribe, tmp_path):
+        """End-to-end through the real converter (ffmpeg mocked): the input video survives."""
+        from src.pipeline import run
+
+        local_video = tmp_path / "lecture.mp4"
+        local_video.write_bytes(b"fake video content")
+        mock_transcribe.return_value = ("transcript text", tmp_path / "lecture.txt")
+
+        def fake_ffmpeg(cmd, **kwargs):
+            Path(cmd[-1]).write_bytes(b"fake audio")
+            return MagicMock(returncode=0)
+
+        with patch("src.converter.subprocess.run", side_effect=fake_ffmpeg):
+            config = PipelineConfig(skip_analysis=True, output_dir=tmp_path)
+            result = run(None, config, local_file=str(local_video))
+
+        assert result.success is True
+        assert local_video.exists()
+
+
 # ── Converter tests ──────────────────────────────────────────────
 
 class TestConverter:
@@ -106,6 +159,18 @@ class TestConverter:
         cmd = mock_run.call_args[0][0]
         assert "ffmpeg" in cmd
         assert "-vn" in cmd
+
+    @patch("src.converter.subprocess.run")
+    def test_extract_audio_skips_ffmpeg_for_mp3_input(self, mock_run, tmp_path):
+        from src.converter import extract_audio
+
+        audio = tmp_path / "lecture.mp3"
+        audio.write_bytes(b"fake audio content")
+
+        result = extract_audio(audio, keep_video=True)
+
+        assert result == audio
+        mock_run.assert_not_called()
 
     @patch("src.converter.subprocess.run")
     def test_extract_audio_raises_on_failure(self, mock_run, tmp_path):

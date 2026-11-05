@@ -12,6 +12,8 @@ from pathlib import Path
 
 logger = logging.getLogger("lecture_pipeline")
 
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac", ".ogg"}
+
 
 class ConversionError(Exception):
     """Raised when audio extraction fails."""
@@ -20,17 +22,25 @@ class ConversionError(Exception):
 def extract_audio(video_path: Path, keep_video: bool = False) -> Path:
     """Convert a video file to MP3 audio.
 
+    If the input is already an audio file, ffmpeg is skipped and the
+    input path is returned as-is.
+
     Args:
-        video_path: Path to the input video file.
+        video_path: Path to the input video (or audio) file.
         keep_video: If False, deletes the video after conversion to save disk.
 
     Returns:
-        Path to the output MP3 file.
+        Path to the output MP3 file (or the original file, if it was already audio).
 
     Raises:
         ConversionError: If ffmpeg fails.
     """
     audio_path = video_path.with_suffix(".mp3")
+
+    # Already audio, or the ffmpeg output would collide with the input — nothing to do.
+    if video_path.suffix.lower() in AUDIO_EXTENSIONS or video_path == audio_path:
+        logger.info("Input is already an audio file, skipping ffmpeg: %s", video_path.name)
+        return video_path
 
     logger.info("Extracting audio: %s -> %s", video_path.name, audio_path.name)
 

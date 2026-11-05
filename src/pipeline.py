@@ -38,6 +38,7 @@ class PipelineResult:
     study_guide_path: Path | None = None
     error: str | None = None
     stage_durations: dict[str, float] = field(default_factory=dict)
+    download_skipped: bool = False  # True when a local file was used instead of downloading
 
     @property
     def total_duration(self) -> float:
@@ -68,12 +69,14 @@ class PipelineResult:
         return "\n".join(lines)
 
 
-def run(url: str, config: PipelineConfig) -> PipelineResult:
-    """Execute the full pipeline for a single lecture URL.
+def run(url: str | None, config: PipelineConfig, local_file: str | None = None) -> PipelineResult:
+    """Execute the full pipeline for a single lecture, from a URL or a local file.
 
     Args:
-        url: Video URL to process.
+        url: Video URL to process. Ignored if local_file is provided.
         config: Pipeline configuration.
+        local_file: Path to a video already on disk. When provided, the
+            download stage is skipped and the pipeline starts at conversion.
 
     Returns:
         PipelineResult with paths to all outputs and timing data.
@@ -81,23 +84,30 @@ def run(url: str, config: PipelineConfig) -> PipelineResult:
     result = PipelineResult()
 
     logger.info("=" * 60)
-    logger.info("PIPELINE START — %s", url[:80])
+    logger.info("PIPELINE START — %s", (local_file or url)[:80])
     logger.info("=" * 60)
 
     # ── Stage 1: Download (Extract) ──────────────────────────────
-    try:
-        t0 = time.time()
-        result.video_path = download_video(url, config)
-        result.stage_durations["download"] = time.time() - t0
-    except DownloadError as e:
-        result.error = str(e)
-        logger.error("Pipeline failed at DOWNLOAD stage: %s", e)
-        return result
+    if local_file:
+        logger.info("Skipping download stage (local file provided): %s", local_file)
+        result.video_path = Path(local_file)
+        result.download_skipped = True
+    else:
+        try:
+            t0 = time.time()
+            result.video_path = download_video(url, config)
+            result.stage_durations["download"] = time.time() - t0
+        except DownloadError as e:
+            result.error = str(e)
+            logger.error("Pipeline failed at DOWNLOAD stage: %s", e)
+            return result
 
     # ── Stage 2: Convert to audio (Transform 1) ─────────────────
     try:
         t0 = time.time()
-        result.audio_path = extract_audio(result.video_path, keep_video=config.keep_video)
+        # Never delete a file the user supplied — only clean up videos we downloaded.
+        keep_video = config.keep_video or result.download_skipped
+        result.audio_path = extract_audio(result.video_path, keep_video=keep_video)
         result.stage_durations["convert"] = time.time() - t0
     except ConversionError as e:
         result.error = str(e)
