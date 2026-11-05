@@ -9,9 +9,9 @@ the system that will consume it (the LLM). The output is the
 final deliverable: a structured study guide.
 """
 
+import json
 import logging
 from pathlib import Path
-import json
 
 from src.config import PipelineConfig
 
@@ -49,8 +49,8 @@ def analyze(transcript: str, config: PipelineConfig, output_dir: Path) -> tuple[
 
     try:
         import anthropic
-    except ImportError:
-        raise AnalysisError("Anthropic SDK not installed. Run: pip install anthropic")
+    except ImportError as e:
+        raise AnalysisError("Anthropic SDK not installed. Run: pip install anthropic") from e
 
     try:
         client = anthropic.Anthropic(api_key=config.anthropic_api_key)
@@ -69,7 +69,7 @@ def analyze(transcript: str, config: PipelineConfig, output_dir: Path) -> tuple[
             ],
         )
     except Exception as e:
-        raise AnalysisError(f"Claude API call failed: {e}")
+        raise AnalysisError(f"Claude API call failed: {e}") from e
 
     study_guide_text = message.content[0].text
 
@@ -90,7 +90,7 @@ def analyze(transcript: str, config: PipelineConfig, output_dir: Path) -> tuple[
         raw_path = output_dir / "study_guide_raw.txt"
         raw_path.write_text(study_guide_text, encoding="utf-8")
         logger.warning("Claude returned malformed JSON; saved raw output: %s", raw_path)
-        raise AnalysisError(f"Failed to parse Claude JSON response: {e}")
+        raise AnalysisError(f"Failed to parse Claude JSON response: {e}") from e
 
     # Validate required top-level keys
     required = ["title", "summary", "topics", "review_questions"]

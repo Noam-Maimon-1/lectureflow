@@ -39,22 +39,20 @@ def transcribe(audio_path: Path, model_name: str = "base") -> tuple[str, Path]:
 
     try:
         import whisper
-    except ImportError:
-        raise TranscriptionError(
-            "Whisper is not installed. Run: pip install openai-whisper"
-        )
+    except ImportError as e:
+        raise TranscriptionError("Whisper is not installed. Run: pip install openai-whisper") from e
 
     try:
         model = whisper.load_model(model_name)
     except Exception as e:
-        raise TranscriptionError(f"Failed to load Whisper model '{model_name}': {e}")
+        raise TranscriptionError(f"Failed to load Whisper model '{model_name}': {e}") from e
 
     logger.info("Transcribing %s — this may take a few minutes...", audio_path.name)
 
     try:
         result = model.transcribe(str(audio_path), verbose=False)
     except Exception as e:
-        raise TranscriptionError(f"Transcription failed: {e}")
+        raise TranscriptionError(f"Transcription failed: {e}") from e
 
     transcript = result["text"].strip()
 

@@ -1,0 +1,17 @@
+[project]
+name = "lecture-pipeline"
+version = "0.1.0"
+description = "Turn lecture recordings into AI-generated study guides (yt-dlp -> ffmpeg -> Whisper -> Claude)."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["venv", ".venv"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -13,6 +13,7 @@ help:
 	@echo "Available commands:"
 	@echo "  make process URL=\"...\"   Run the pipeline on a lecture URL"
 	@echo "  make test                Run tests"
+	@echo "  make lint                Run ruff"
 	@echo "  make docker-build        Build the Docker image"
 	@echo "  make docker-run URL=\"...\" Run via Docker"
 	@echo "  make clean               Remove output files"
@@ -24,11 +25,15 @@ process:
 
 # Run tests
 test:
-	python -m pytest tests/ -v
+	python -m pytest -v
+
+# Lint
+lint:
+	ruff check .
 
 # Install dependencies
 setup:
-	pip install -r requirements.txt
+	pip install -r requirements.txt -r requirements-dev.txt
 
 # Docker
 docker-build:

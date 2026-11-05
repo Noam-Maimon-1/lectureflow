@@ -18,6 +18,12 @@ from src.config import PipelineConfig
 
 logger = logging.getLogger("lecture_pipeline")
 
+# Some CDNs (e.g. Moodle behind CloudFront) reject requests that do not look like a browser.
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
 
 class DownloadError(Exception):
     """Raised when a video cannot be downloaded after all retries."""
@@ -75,11 +81,11 @@ def _try_ytdlp(url: str, config: PipelineConfig) -> Path:
             "-o", output_template,
             "--print", "after_move:filepath"
     ]
-    
+
     if config.referer:
         cmd += ["--add-header", f"Referer:{config.referer}"]
-        cmd += ["--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"]
-    
+        cmd += ["--add-header", f"User-Agent:{BROWSER_USER_AGENT}"]
+
     cmd.append(url)
 
     result = subprocess.run(
@@ -110,11 +116,11 @@ def _try_curl(url: str, config: PipelineConfig) -> Path:
         "--max-time", str(config.download_timeout),
         "--retry", "2",
     ]
-    
+
     if config.referer:
         cmd += ["--referer", config.referer]
-        cmd += ["--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"]
-    
+        cmd += ["--user-agent", BROWSER_USER_AGENT]
+
     cmd += ["-o", str(output_path), url]
 
     result = subprocess.run(

@@ -17,12 +17,12 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from src.analyzer import AnalysisError, analyze
 from src.config import PipelineConfig
-from src.downloader import download_video, DownloadError
-from src.converter import extract_audio, ConversionError
-from src.transcriber import transcribe, TranscriptionError
-from src.analyzer import analyze, AnalysisError
-from src.renderer import render_html, RenderError
+from src.converter import ConversionError, extract_audio
+from src.downloader import DownloadError, download_video
+from src.renderer import RenderError, render_html
+from src.transcriber import TranscriptionError, transcribe
 
 logger = logging.getLogger("lecture_pipeline")
 

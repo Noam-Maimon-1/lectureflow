@@ -15,7 +15,7 @@ output/
 *.mp3
 *.mp4
 *.txt
-!requirements.txt
+!requirements*.txt
 !instructions/*.txt
 study_guide.*
 study_guide_raw.txt

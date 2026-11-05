@@ -40,7 +40,7 @@ def render_html(parsed: dict, output_dir: Path) -> Path:
     try:
         out_path.write_text(content, encoding="utf-8")
     except OSError as e:
-        raise RenderError(f"Failed to write HTML file: {e}")
+        raise RenderError(f"Failed to write HTML file: {e}") from e
 
     logger.info("HTML study guide saved: %s", out_path)
     return out_path

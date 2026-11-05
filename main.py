@@ -11,12 +11,12 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()  # Load environment variables from .env file if present
 
+from dotenv import load_dotenv
+
+from src import pipeline
 from src.config import PipelineConfig
 from src.logger import setup_logger
-from src import pipeline
 
 
 def parse_args() -> argparse.Namespace:
@@ -95,6 +95,7 @@ Examples:
 
 
 def main():
+    load_dotenv()  # Load environment variables from .env file if present
     args = parse_args()
 
     # Setup logging first

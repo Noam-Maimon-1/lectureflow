@@ -1,0 +1,5 @@
+# Development and CI tooling.
+# The tests mock subprocess calls and the Anthropic client, so they need none of the
+# heavy runtime dependencies (Whisper pulls in PyTorch). CI installs only this file.
+pytest>=8.0,<10
+ruff>=0.6
