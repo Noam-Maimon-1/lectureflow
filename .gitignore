@@ -15,7 +15,14 @@ output/
 *.mp3
 *.mp4
 *.txt
-study_guide.md
+!requirements.txt
+!instructions/*.txt
+study_guide.*
+study_guide_raw.txt
+
+# Virtual environments
+.venv/
+venv/
 
 # Whisper model cache
 # (downloaded automatically, no need to commit)

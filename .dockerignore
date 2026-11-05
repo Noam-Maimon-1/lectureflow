@@ -1,0 +1,21 @@
+# Secrets: pass them at runtime with env_file / --env-file, never bake them into the image
+.env
+
+# Local environments and caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Media and generated output
+output/
+*.mp3
+*.mp4
+study_guide.*
+
+# VCS / IDE
+.git/
+.gitignore
+.vscode/
+.idea/
