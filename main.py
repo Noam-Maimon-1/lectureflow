@@ -15,7 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src import pipeline
-from src.config import PipelineConfig
+from src.config import TRANSCRIBER_BACKENDS, PipelineConfig
 from src.logger import setup_logger
 
 
@@ -37,6 +37,9 @@ Examples:
   # Better accuracy for non-English lectures:
   python main.py lecture.mp4 --whisper-model medium
 
+  # Transcribe in the cloud with Groq (whisper-large-v3, needs GROQ_API_KEY):
+  python main.py lecture.mp4 --transcriber groq
+
   # Use your own instructions for how Claude should process it:
   python main.py lecture.mp4 --instructions my_instructions.txt
         """,
@@ -56,9 +59,14 @@ Examples:
         help="Path to a custom instructions file for Claude",
     )
     parser.add_argument(
+        "--transcriber", type=str, default=None,
+        choices=list(TRANSCRIBER_BACKENDS),
+        help="Transcription backend: local Whisper or the Groq API (default: local, or LP_TRANSCRIBER_BACKEND)",
+    )
+    parser.add_argument(
         "--whisper-model", type=str, default=None,
         choices=["tiny", "base", "small", "medium", "large"],
-        help="Whisper model size (default: base)",
+        help="Whisper model size for the local backend (default: base)",
     )
     parser.add_argument(
         "--output-dir", type=str, default=None,
@@ -96,6 +104,8 @@ def main():
         config.skip_analysis = True
     if args.instructions:
         config.instructions_file = Path(args.instructions)
+    if args.transcriber:
+        config.transcriber_backend = args.transcriber
     if args.whisper_model:
         config.whisper_model = args.whisper_model
     if args.output_dir:

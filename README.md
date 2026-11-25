@@ -13,7 +13,8 @@ Give it a lecture recording (video or audio) → it **extracts** the audio, **tr
 ```
 ┌──────────┐    ┌──────────┐    ┌────────────┐    ┌──────────┐    ┌──────────┐
 │  Input   │───>│ Convert  │───>│ Transcribe │───>│ Analyze  │───>│  Render  │
-│  file    │    │ (ffmpeg) │    │ (Whisper)  │    │ (Claude) │    │  (HTML)  │
+│  file    │    │ (ffmpeg) │    │ (Whisper / │    │ (Claude) │    │  (HTML)  │
+│          │    │          │    │   Groq)    │    │          │    │          │
 └──────────┘    └──────────┘    └────────────┘    └──────────┘    └──────────┘
                   EXTRACT         TRANSFORM          LOAD
 
@@ -30,7 +31,7 @@ Each run writes to the output directory (default `~/lecture_pipeline_output`):
 | File | Contents |
 |---|---|
 | `<lecture>.mp3` | Extracted audio, video input only (128 kbps — enough for speech) |
-| `<lecture>.txt` | Raw Whisper transcript |
+| `<lecture>.txt` | Transcript, one segment per line as `[HH:MM:SS] text` (same format for both backends) |
 | `study_guide.json` | Structured guide: summary, topics → subtopics, key terms, misconceptions, review Q&A, lecture notes |
 | `study_guide.md` | The same guide rendered as Markdown |
 | `study_guide.html` | Self-contained page (no external assets) with a sidebar table of contents, light/dark toggle and collapsible review answers |
@@ -68,8 +69,11 @@ python main.py lecture.m4a
 # Just transcribe (no API key needed):
 python main.py lecture.mp4 --skip-analysis
 
-# Non-English lectures — use a larger Whisper model:
+# Non-English lectures — use a larger local Whisper model:
 python main.py lecture.mp4 --whisper-model medium
+
+# Transcribe in the cloud with Groq (fast, whisper-large-v3; needs GROQ_API_KEY in .env):
+python main.py lecture.mp4 --transcriber groq
 
 # Custom study instructions:
 python main.py lecture.mp4 --instructions instructions/my_prompt.txt
@@ -99,12 +103,13 @@ lecture-pipeline/
 │   ├── config.py            # Configuration management (env vars)
 │   ├── logger.py            # Structured logging setup
 │   ├── converter.py         # EXTRACT — audio from video (ffmpeg)
-│   ├── transcriber.py       # TRANSFORM — audio to text (Whisper)
+│   ├── transcriber.py       # TRANSFORM — transcriber interface, local Whisper backend, factory
+│   ├── groq_transcriber.py  # TRANSFORM — Groq API backend (re-encode, chunking, retries)
 │   ├── analyzer.py          # LOAD — transcript to Claude API, JSON validation
 │   ├── renderer.py          # Study guide JSON to self-contained HTML
 │   └── pipeline.py          # Orchestrator — sequences all stages
 ├── tests/
-│   └── test_pipeline.py     # Unit tests (ffmpeg, Whisper and Claude are mocked)
+│   └── test_pipeline.py     # Unit tests (ffmpeg, Whisper, Groq and Claude are mocked)
 ├── .github/workflows/ci.yml # Lint + tests on Python 3.11–3.13
 ├── instructions/
 │   └── default.txt          # Default study prompt for Claude
@@ -125,11 +130,24 @@ lecture-pipeline/
 
 **Why take a file instead of a URL?** An earlier version downloaded lectures from URLs (yt-dlp with a curl fallback, retries and custom headers for CDN-hosted video). That made the pipeline depend on how each site serves video, which kept changing. Taking a file keeps the tool focused on its core job: it works with any recording, from any source. Getting the recording is left to the user.
 
+**Why two transcription backends?** Local Whisper is free and works offline; Groq is much faster and runs the large model, which matters for Hebrew lectures. Both implement one `Transcriber` interface and write the same transcript format, so the rest of the pipeline doesn't know which one ran.
+
 **Why Docker?** The pipeline has non-trivial system dependencies (ffmpeg, Whisper model weights). Containerizing ensures reproducible runs across machines — a legitimate engineering reason, not resume padding.
 
 ## Configuration
 
 All settings can be controlled via environment variables (see `.env.example`) or CLI flags. CLI flags override env vars. This separation of configuration from code follows [twelve-factor app](https://12factor.net/config) principles.
+
+**Transcription backend**
+
+| Setting | CLI flag | Default | Notes |
+|---|---|---|---|
+| `LP_TRANSCRIBER_BACKEND` | `--transcriber` | `local` | `local` (Whisper on your machine) or `groq` (cloud API) |
+| `LP_WHISPER_MODEL` | `--whisper-model` | `base` | Local backend only |
+| `GROQ_API_KEY` | — | — | Required for `groq`; keep it in `.env`. Get one at [console.groq.com/keys](https://console.groq.com/keys) |
+| `LP_GROQ_MODEL` | — | `whisper-large-v3` | Or `whisper-large-v3-turbo` |
+
+Both backends transcribe in Hebrew (`language="he"`, set explicitly rather than auto-detected). The Groq backend re-encodes audio to mono 16 kHz 32 kbps before upload (about 14 MB per hour). Recordings that are still over the 25 MB upload limit are split into ~10-minute chunks, and the timestamps are stitched back together. Rate limits and network errors are retried with exponential backoff; an invalid key fails immediately.
 
 ## Testing
 

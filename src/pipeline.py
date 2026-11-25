@@ -7,7 +7,7 @@ is independent and testable on its own — this module just sequences them.
 
 Pipeline stages:
   1. EXTRACT   — extract audio from the video     (converter)
-  2. TRANSFORM — transcribe audio to text          (transcriber)
+  2. TRANSFORM — transcribe audio to text          (transcriber: local Whisper or Groq)
   3. LOAD      — send transcript to Claude API     (analyzer)
   4. RENDER    — study guide JSON to HTML          (renderer)
 """
@@ -21,7 +21,7 @@ from src.analyzer import AnalysisError, analyze
 from src.config import PipelineConfig
 from src.converter import ConversionError, extract_audio
 from src.renderer import RenderError, render_html
-from src.transcriber import TranscriptionError, transcribe
+from src.transcriber import TranscriptionError, get_transcriber
 
 logger = logging.getLogger("lecture_pipeline")
 
@@ -100,9 +100,8 @@ def run(input_path: Path, config: PipelineConfig) -> PipelineResult:
     # ── Stage 2: Transcribe ──────────────────────────────────────
     try:
         t0 = time.time()
-        transcript, result.transcript_path = transcribe(
-            result.audio_path, model_name=config.whisper_model, output_dir=config.output_dir
-        )
+        transcriber = get_transcriber(config)  # local Whisper or Groq — the pipeline doesn't care which
+        transcript, result.transcript_path = transcriber.transcribe(result.audio_path, output_dir=config.output_dir)
         result.stage_durations["transcribe"] = time.time() - t0
     except TranscriptionError as e:
         result.error = str(e)

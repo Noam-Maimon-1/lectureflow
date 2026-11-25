@@ -1,6 +1,7 @@
 # Runtime dependencies. Dev/test tooling lives in requirements-dev.txt.
-# System dependency: ffmpeg must be installed and on PATH (for video input).
+# System dependency: ffmpeg (and ffprobe) must be on PATH — for video input, and always for the groq backend.
 
-openai-whisper>=20231117
+openai-whisper>=20231117   # local transcription backend
+groq>=1.0.0,<2.0           # cloud transcription backend (Groq Whisper API)
 anthropic>=0.40.0,<1.0
 python-dotenv>=1.0.0,<2.0
