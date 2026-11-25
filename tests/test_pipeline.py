@@ -314,6 +314,25 @@ class TestTranscriberConfig:
         errors = PipelineConfig(skip_analysis=True, transcriber_backend="azure").validate()
         assert any("transcriber backend" in e for e in errors)
 
+    def test_language_defaults_to_hebrew_and_reaches_both_backends(self):
+        from src.transcriber import get_transcriber
+
+        assert PipelineConfig().language == "he"
+        local = get_transcriber(PipelineConfig(language="en"))
+        groq = get_transcriber(PipelineConfig(transcriber_backend="groq", groq_api_key="gsk_test", language="en"))
+        assert local.language == "en"
+        assert groq.language == "en"
+
+    def test_invalid_language_fails_validation(self):
+        for bad in ("english", "", "e1"):
+            errors = PipelineConfig(skip_analysis=True, language=bad).validate()
+            assert any("Invalid language" in e for e in errors), bad
+        assert PipelineConfig(skip_analysis=True, language="en").validate() == []
+
+    def test_language_read_from_environment(self):
+        with patch.dict(os.environ, {"LP_LANGUAGE": " EN "}):
+            assert PipelineConfig.from_env().language == "en"
+
     def test_backend_read_from_environment(self):
         with patch.dict(os.environ, {
             "LP_TRANSCRIBER_BACKEND": "GROQ",

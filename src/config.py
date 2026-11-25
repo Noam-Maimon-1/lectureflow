@@ -6,12 +6,14 @@ All pipeline behavior is controlled here — no magic strings in other modules.
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 TRANSCRIBER_BACKENDS = ("local", "groq")
 
-# Lectures are in Hebrew. Both backends pass this explicitly — never rely on auto-detection.
+# Default spoken language of the lectures (ISO 639-1 code, e.g. "he", "en").
+# Both backends always pass the language explicitly — never rely on auto-detection.
 TRANSCRIPTION_LANGUAGE = "he"
 
 
@@ -25,6 +27,7 @@ class PipelineConfig:
 
     # Transcriber
     transcriber_backend: str = "local"  # local (Whisper on this machine) | groq (cloud API)
+    language: str = TRANSCRIPTION_LANGUAGE  # spoken language of the recording: he, en, ...
     whisper_model: str = "base"  # tiny | base | small | medium | large  (local backend)
     groq_api_key: str | None = None
     groq_model: str = "whisper-large-v3"  # or whisper-large-v3-turbo  (groq backend)
@@ -51,6 +54,7 @@ class PipelineConfig:
             output_dir=Path(os.getenv("LP_OUTPUT_DIR", str(Path.home() / "lecture_pipeline_output"))),
             instructions_file=Path(f) if (f := os.getenv("LP_INSTRUCTIONS_FILE")) else None,
             transcriber_backend=os.getenv("LP_TRANSCRIBER_BACKEND", "local").strip().lower(),
+            language=os.getenv("LP_LANGUAGE", TRANSCRIPTION_LANGUAGE).strip().lower(),
             whisper_model=os.getenv("LP_WHISPER_MODEL", "base"),
             groq_api_key=os.getenv("GROQ_API_KEY"),
             groq_model=os.getenv("LP_GROQ_MODEL", "whisper-large-v3"),
@@ -82,6 +86,10 @@ class PipelineConfig:
                 "GROQ_API_KEY not set, but the groq transcriber backend is selected. "
                 "Set it in .env or use --transcriber local. "
                 "Get a key at: https://console.groq.com/keys"
+            )
+        if not re.fullmatch(r"[a-z]{2,3}", self.language):
+            errors.append(
+                f"Invalid language: {self.language!r}. Use a language code such as 'en' (English) or 'he' (Hebrew)."
             )
         if self.claude_effort not in ("low", "medium", "high", "xhigh", "max"):
             errors.append(f"Invalid Claude effort: {self.claude_effort!r}. Choose low, medium, high, xhigh or max.")

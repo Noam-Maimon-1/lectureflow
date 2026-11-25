@@ -75,6 +75,9 @@ python main.py lecture.mp4 --whisper-model medium
 # Transcribe in the cloud with Groq (fast, whisper-large-v3; needs GROQ_API_KEY in .env):
 python main.py lecture.mp4 --transcriber groq
 
+# English lecture (the default language is Hebrew):
+python main.py lecture.mp4 --language en
+
 # Custom study instructions:
 python main.py lecture.mp4 --instructions instructions/my_prompt.txt
 
@@ -143,11 +146,12 @@ All settings can be controlled via environment variables (see `.env.example`) or
 | Setting | CLI flag | Default | Notes |
 |---|---|---|---|
 | `LP_TRANSCRIBER_BACKEND` | `--transcriber` | `local` | `local` (Whisper on your machine) or `groq` (cloud API) |
+| `LP_LANGUAGE` | `--language` | `he` | Spoken language as a code (`he`, `en`, ...) |
 | `LP_WHISPER_MODEL` | `--whisper-model` | `base` | Local backend only |
 | `GROQ_API_KEY` | — | — | Required for `groq`; keep it in `.env`. Get one at [console.groq.com/keys](https://console.groq.com/keys) |
 | `LP_GROQ_MODEL` | — | `whisper-large-v3` | Or `whisper-large-v3-turbo` |
 
-Both backends transcribe in Hebrew (`language="he"`, set explicitly rather than auto-detected). The Groq backend re-encodes audio to mono 16 kHz 32 kbps before upload (about 14 MB per hour). Recordings that are still over the 25 MB upload limit are split into ~10-minute chunks, and the timestamps are stitched back together. Rate limits and network errors are retried with exponential backoff; an invalid key fails immediately.
+Both backends pass the language explicitly (Hebrew by default, `--language en` for English) rather than relying on auto-detection. The Groq backend re-encodes audio to mono 16 kHz 32 kbps before upload (about 14 MB per hour). Recordings that are still over the 25 MB upload limit are split into ~10-minute chunks, and the timestamps are stitched back together. Rate limits and network errors are retried with exponential backoff; an invalid key fails immediately.
 
 ## Testing
 

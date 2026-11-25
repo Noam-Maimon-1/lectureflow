@@ -141,13 +141,13 @@ class LocalWhisperTranscriber(Transcriber):
 def get_transcriber(config: PipelineConfig) -> Transcriber:
     """Factory: build the transcription backend selected in config."""
     backend = config.transcriber_backend
-    logger.info("Transcriber backend: %s", backend)
+    logger.info("Transcriber backend: %s (language: %s)", backend, config.language)
 
     if backend == "local":
-        return LocalWhisperTranscriber(model_name=config.whisper_model)
+        return LocalWhisperTranscriber(model_name=config.whisper_model, language=config.language)
     if backend == "groq":
         from src.groq_transcriber import GroqTranscriber
 
-        return GroqTranscriber(api_key=config.groq_api_key, model=config.groq_model)
+        return GroqTranscriber(api_key=config.groq_api_key, model=config.groq_model, language=config.language)
 
     raise TranscriptionError(f"Unknown transcriber backend: {backend!r}")

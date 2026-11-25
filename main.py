@@ -40,6 +40,9 @@ Examples:
   # Transcribe in the cloud with Groq (whisper-large-v3, needs GROQ_API_KEY):
   python main.py lecture.mp4 --transcriber groq
 
+  # English lecture (default language is Hebrew):
+  python main.py lecture.mp4 --language en
+
   # Use your own instructions for how Claude should process it:
   python main.py lecture.mp4 --instructions my_instructions.txt
         """,
@@ -57,6 +60,10 @@ Examples:
     parser.add_argument(
         "--instructions", type=str, default=None,
         help="Path to a custom instructions file for Claude",
+    )
+    parser.add_argument(
+        "--language", type=str, default=None,
+        help="Spoken language of the recording as a code: he, en, ... (default: he, or LP_LANGUAGE)",
     )
     parser.add_argument(
         "--transcriber", type=str, default=None,
@@ -104,6 +111,8 @@ def main():
         config.skip_analysis = True
     if args.instructions:
         config.instructions_file = Path(args.instructions)
+    if args.language:
+        config.language = args.language.strip().lower()
     if args.transcriber:
         config.transcriber_backend = args.transcriber
     if args.whisper_model:
