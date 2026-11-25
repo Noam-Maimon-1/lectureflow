@@ -6,22 +6,22 @@
 
 An ETL pipeline that transforms university lecture recordings into AI-generated study guides.
 
-**Extract** a lecture video from a URL → **Transform** it through audio conversion and speech-to-text transcription → **Load** the transcript into Claude for structured study material.
+Give it a lecture recording (video or audio) → it **extracts** the audio, **transforms** it into a transcript with speech-to-text, and **loads** the transcript into Claude to produce structured study material.
 
 ## Architecture
 
 ```
 ┌──────────┐    ┌──────────┐    ┌────────────┐    ┌──────────┐    ┌──────────┐
-│ Download │───>│ Convert  │───>│ Transcribe │───>│ Analyze  │───>│  Render  │
-│ (yt-dlp) │    │ (ffmpeg) │    │ (Whisper)  │    │ (Claude) │    │  (HTML)  │
+│  Input   │───>│ Convert  │───>│ Transcribe │───>│ Analyze  │───>│  Render  │
+│  file    │    │ (ffmpeg) │    │ (Whisper)  │    │ (Claude) │    │  (HTML)  │
 └──────────┘    └──────────┘    └────────────┘    └──────────┘    └──────────┘
-   EXTRACT       TRANSFORM 1     TRANSFORM 2        LOAD
+                  EXTRACT         TRANSFORM          LOAD
 
-Input:  Video URL, or a local video/audio file (--local-file)
+Input:  A video (.mp4, .mkv, .mov, ...) or audio file (.mp3, .wav, .m4a, .flac, .ogg)
 Output: MP3 audio, text transcript, and a study guide as JSON, Markdown and HTML
 ```
 
-Each stage is an independent module in `src/` — testable, replaceable, and extensible on its own.
+Each stage is an independent module in `src/` — testable, replaceable, and extensible on its own. Audio input skips the ffmpeg step. Your input file is never modified or deleted.
 
 ## Output
 
@@ -29,7 +29,7 @@ Each run writes to the output directory (default `~/lecture_pipeline_output`):
 
 | File | Contents |
 |---|---|
-| `<lecture>.mp3` | Extracted audio (128 kbps — enough for speech) |
+| `<lecture>.mp3` | Extracted audio, video input only (128 kbps — enough for speech) |
 | `<lecture>.txt` | Raw Whisper transcript |
 | `study_guide.json` | Structured guide: summary, topics → subtopics, key terms, misconceptions, review Q&A, lecture notes |
 | `study_guide.md` | The same guide rendered as Markdown |
@@ -59,36 +59,35 @@ cp .env.example .env
 ### Usage
 
 ```bash
-# Full pipeline — paste a lecture video URL:
-python main.py "https://moodle.example.com/media/lecture.mp4"
+# Full pipeline on a video:
+python main.py ~/Downloads/lecture.mp4
 
-# Just download + transcribe (no API key needed):
-python main.py "URL" --skip-analysis
+# Audio works too (skips ffmpeg):
+python main.py lecture.m4a
+
+# Just transcribe (no API key needed):
+python main.py lecture.mp4 --skip-analysis
 
 # Non-English lectures — use a larger Whisper model:
-python main.py "URL" --whisper-model medium
+python main.py lecture.mp4 --whisper-model medium
 
 # Custom study instructions:
-python main.py "URL" --instructions instructions/my_prompt.txt
+python main.py lecture.mp4 --instructions instructions/my_prompt.txt
 
-# Process a recording already on disk (your file is never deleted):
-python main.py --local-file ~/Downloads/lecture.mp4
-
-# CDN-hosted videos that need a Referer (e.g. Moodle):
-python main.py "URL" --referer https://moodle.example.ac.il/
-
-# Skip the HTML page (JSON + Markdown only):
-python main.py "URL" --no-html
+# Choose where outputs go, skip the HTML page:
+python main.py lecture.mp4 --output-dir ./output --no-html
 
 # Using Make:
-make process URL="https://..."
+make process FILE=lecture.mp4
 ```
 
 ### Docker
 
+Put the recording in `./input` (mounted read-only); results appear in `./output`:
+
 ```bash
-docker build -t lecture-pipeline .
-docker compose run pipeline "VIDEO_URL"
+docker compose build
+docker compose run --rm pipeline /input/lecture.mp4
 ```
 
 ## Project Structure
@@ -99,14 +98,13 @@ lecture-pipeline/
 ├── src/
 │   ├── config.py            # Configuration management (env vars)
 │   ├── logger.py            # Structured logging setup
-│   ├── downloader.py        # EXTRACT — video download with retries
-│   ├── converter.py         # TRANSFORM — video to audio (ffmpeg)
+│   ├── converter.py         # EXTRACT — audio from video (ffmpeg)
 │   ├── transcriber.py       # TRANSFORM — audio to text (Whisper)
 │   ├── analyzer.py          # LOAD — transcript to Claude API, JSON validation
 │   ├── renderer.py          # Study guide JSON to self-contained HTML
 │   └── pipeline.py          # Orchestrator — sequences all stages
 ├── tests/
-│   └── test_pipeline.py     # Unit tests (ffmpeg, yt-dlp, Whisper and Claude are mocked)
+│   └── test_pipeline.py     # Unit tests (ffmpeg, Whisper and Claude are mocked)
 ├── .github/workflows/ci.yml # Lint + tests on Python 3.11–3.13
 ├── instructions/
 │   └── default.txt          # Default study prompt for Claude
@@ -125,6 +123,8 @@ lecture-pipeline/
 
 **Why modular stages?** Each stage has a single responsibility and a clean interface (input path → output path). This makes them independently testable, replaceable (swap Whisper for another STT engine), and composable (skip stages with flags).
 
+**Why take a file instead of a URL?** An earlier version downloaded lectures from URLs (yt-dlp with a curl fallback, retries and custom headers for CDN-hosted video). That made the pipeline depend on how each site serves video, which kept changing. Taking a file keeps the tool focused on its core job: it works with any recording, from any source. Getting the recording is left to the user.
+
 **Why Docker?** The pipeline has non-trivial system dependencies (ffmpeg, Whisper model weights). Containerizing ensures reproducible runs across machines — a legitimate engineering reason, not resume padding.
 
 ## Configuration
@@ -139,14 +139,14 @@ make test        # or: python -m pytest -v
 ruff check .
 ```
 
-The tests mock every external dependency (subprocess calls to ffmpeg/yt-dlp/curl, Whisper, and the Anthropic client), so they run in well under a second and don't need a GPU or an API key. CI runs lint and tests on every push and pull request.
+The tests mock every external dependency (the ffmpeg subprocess, Whisper, and the Anthropic client), so they run in well under a second and don't need a GPU or an API key. CI runs lint and tests on every push and pull request.
 
 ## Future Roadmap
 
-- [ ] **Moodle scraper**: Authenticate and automatically discover new lecture recordings
-- [ ] **Scheduled runs**: Weekly cron or Prefect flow to process new lectures automatically
+- [ ] **Batch mode**: Process every recording in a folder
+- [ ] **Watch folder**: Pick up new recordings automatically as they appear
 - [ ] **State tracking**: SQLite log of processed lectures for idempotency
-- [ ] **Parallel processing**: Batch-process multiple lectures concurrently
+- [ ] **Parallel processing**: Process multiple lectures concurrently
 - [ ] **Notification**: Send study guide via email/Telegram when processing completes
 
 ## License

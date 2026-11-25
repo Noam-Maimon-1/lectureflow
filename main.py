@@ -3,9 +3,9 @@
 Lecture Pipeline — CLI entry point.
 
 Usage:
-  python main.py "https://example.com/lecture-video.mp4"
-  python main.py "URL" --skip-analysis
-  python main.py "URL" --instructions my_prompt.txt --whisper-model medium
+  python main.py lecture.mp4
+  python main.py lecture.mp4 --skip-analysis
+  python main.py lecture.m4a --instructions my_prompt.txt --whisper-model medium
 """
 
 import argparse
@@ -21,35 +21,30 @@ from src.logger import setup_logger
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Process a lecture video into an AI-generated study guide.",
+        description="Process a lecture recording (video or audio) into an AI-generated study guide.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full pipeline (download → audio → transcribe → study guide):
-  python main.py "https://moodle.uni.edu/media/lecture.mp4"
+  # Full pipeline (audio -> transcript -> study guide):
+  python main.py lecture.mp4
 
-  # Just download + transcribe (no Claude API key needed):
-  python main.py "URL" --skip-analysis
+  # Audio files skip the ffmpeg step:
+  python main.py lecture.m4a
+
+  # Just transcribe (no Claude API key needed):
+  python main.py lecture.mp4 --skip-analysis
 
   # Better accuracy for non-English lectures:
-  python main.py "URL" --whisper-model medium
+  python main.py lecture.mp4 --whisper-model medium
 
   # Use your own instructions for how Claude should process it:
-  python main.py "URL" --instructions my_instructions.txt
-
-  # Process a video already on disk (skips the download stage):
-  python main.py --local-file /path/to/lecture.mp4
+  python main.py lecture.mp4 --instructions my_instructions.txt
         """,
     )
 
-    source_group = parser.add_mutually_exclusive_group(required=True)
-    source_group.add_argument(
-        "url", nargs="?", default=None,
-        help="URL of the lecture video to process",
-    )
-    source_group.add_argument(
-        "--local-file", type=str, default=None,
-        help="Path to a local video file to process (skips the download stage)",
+    parser.add_argument(
+        "input_file", type=Path,
+        help="Path to the lecture video or audio file (never modified or deleted)",
     )
 
     parser.add_argument(
@@ -68,14 +63,6 @@ Examples:
     parser.add_argument(
         "--output-dir", type=str, default=None,
         help="Directory to save output files (default: ~/lecture_pipeline_output)",
-    )
-    parser.add_argument(
-        "--keep-video", action="store_true",
-        help="Keep the video file after converting to audio",
-    )
-    parser.add_argument(
-        "--referer", type=str, default=None,
-        help="Referer header for the downloader (e.g. https://moodle.bgu.ac.il/)",
     )
     parser.add_argument(
         "--no-html", action="store_true",
@@ -113,24 +100,20 @@ def main():
         config.whisper_model = args.whisper_model
     if args.output_dir:
         config.output_dir = Path(args.output_dir)
-    if args.keep_video:
-        config.keep_video = True
-    if args.referer:
-        config.referer = args.referer
     if args.no_html:
         config.skip_html = True
 
     # Validate before running
     errors = config.validate()
-    if args.local_file and not Path(args.local_file).is_file():
-        errors.append(f"Local file not found: {args.local_file}")
+    if not args.input_file.is_file():
+        errors.append(f"Input file not found: {args.input_file}")
     if errors:
         for err in errors:
             print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
 
     # Run the pipeline
-    result = pipeline.run(args.url, config, local_file=args.local_file)
+    result = pipeline.run(args.input_file, config)
 
     sys.exit(0 if result.success else 1)
 

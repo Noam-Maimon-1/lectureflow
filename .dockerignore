@@ -9,6 +9,7 @@ __pycache__/
 .pytest_cache/
 
 # Media and generated output
+input/
 output/
 *.mp3
 *.mp4
@@ -19,3 +20,6 @@ study_guide.*
 .gitignore
 .vscode/
 .idea/
+
+# Credential documents
+*.docx

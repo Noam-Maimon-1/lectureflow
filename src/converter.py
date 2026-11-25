@@ -1,9 +1,11 @@
 """
-Converter — TRANSFORM stage 1.
+Converter — EXTRACT stage.
 
-Extracts audio from a video file using ffmpeg.
-This is a "lossy reduction" transform: we discard the video stream
+Extracts the audio track from a lecture video using ffmpeg.
+This is a "lossy reduction" step: we discard the video stream
 because downstream stages (transcription) only need audio.
+
+The user's input file is never modified or deleted.
 """
 
 import logging
@@ -19,54 +21,56 @@ class ConversionError(Exception):
     """Raised when audio extraction fails."""
 
 
-def extract_audio(video_path: Path, keep_video: bool = False) -> Path:
-    """Convert a video file to MP3 audio.
+def extract_audio(input_path: Path, output_dir: Path) -> Path:
+    """Convert a video file to MP3 audio in ``output_dir``.
 
     If the input is already an audio file, ffmpeg is skipped and the
     input path is returned as-is.
 
     Args:
-        video_path: Path to the input video (or audio) file.
-        keep_video: If False, deletes the video after conversion to save disk.
+        input_path: Path to the user's video (or audio) file.
+        output_dir: Directory where the extracted MP3 is written.
 
     Returns:
-        Path to the output MP3 file (or the original file, if it was already audio).
+        Path to the MP3 file (or the original file, if it was already audio).
 
     Raises:
-        ConversionError: If ffmpeg fails.
+        ConversionError: If the input does not exist or ffmpeg fails.
     """
-    audio_path = video_path.with_suffix(".mp3")
+    if not input_path.is_file():
+        raise ConversionError(f"Input file not found: {input_path}")
 
-    # Already audio, or the ffmpeg output would collide with the input — nothing to do.
-    if video_path.suffix.lower() in AUDIO_EXTENSIONS or video_path == audio_path:
-        logger.info("Input is already an audio file, skipping ffmpeg: %s", video_path.name)
-        return video_path
+    if input_path.suffix.lower() in AUDIO_EXTENSIONS:
+        logger.info("Input is already an audio file, skipping ffmpeg: %s", input_path.name)
+        return input_path
 
-    logger.info("Extracting audio: %s -> %s", video_path.name, audio_path.name)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = output_dir / f"{input_path.stem}.mp3"
 
-    result = subprocess.run(
-        [
-            "ffmpeg",
-            "-i", str(video_path),
-            "-vn",                  # discard video stream
-            "-acodec", "libmp3lame",
-            "-ab", "128k",         # 128kbps is fine for speech
-            "-ar", "44100",        # standard sample rate
-            "-y",                  # overwrite if exists (idempotency)
-            str(audio_path),
-        ],
-        capture_output=True,
-        text=True,
-    )
+    logger.info("Extracting audio: %s -> %s", input_path.name, audio_path)
+
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-i", str(input_path),
+                "-vn",                  # discard video stream
+                "-acodec", "libmp3lame",
+                "-ab", "128k",         # 128kbps is fine for speech
+                "-ar", "44100",        # standard sample rate
+                "-y",                  # overwrite if exists (idempotency)
+                str(audio_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as e:
+        raise ConversionError("ffmpeg not found. Install it and make sure it is on your PATH.") from e
 
     if result.returncode != 0:
-        raise ConversionError(f"ffmpeg failed: {result.stderr[:300]}")
+        raise ConversionError(f"ffmpeg failed: {result.stderr[-300:]}")
 
     size_mb = audio_path.stat().st_size / 1e6
     logger.info("Audio extracted: %s (%.1f MB)", audio_path.name, size_mb)
-
-    if not keep_video and video_path.exists():
-        video_path.unlink()
-        logger.debug("Removed source video: %s", video_path.name)
 
     return audio_path

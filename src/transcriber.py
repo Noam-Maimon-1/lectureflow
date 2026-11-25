@@ -1,5 +1,5 @@
 """
-Transcriber — TRANSFORM stage 2.
+Transcriber — TRANSFORM stage.
 
 Converts audio to text using OpenAI's Whisper model (runs locally).
 This is the most compute-intensive stage of the pipeline.
@@ -22,12 +22,13 @@ class TranscriptionError(Exception):
     """Raised when transcription fails."""
 
 
-def transcribe(audio_path: Path, model_name: str = "base") -> tuple[str, Path]:
+def transcribe(audio_path: Path, model_name: str = "base", output_dir: Path | None = None) -> tuple[str, Path]:
     """Transcribe an audio file to text using Whisper.
 
     Args:
         audio_path: Path to the audio file (MP3, WAV, etc.).
         model_name: Whisper model size to use.
+        output_dir: Where to save the transcript. Defaults to the audio file's directory.
 
     Returns:
         Tuple of (transcript_text, path_to_saved_transcript_file).
@@ -59,8 +60,9 @@ def transcribe(audio_path: Path, model_name: str = "base") -> tuple[str, Path]:
     if not transcript:
         raise TranscriptionError("Transcription produced empty output — audio may be silent or corrupt.")
 
-    # Save transcript alongside the audio file
-    transcript_path = audio_path.with_suffix(".txt")
+    target_dir = output_dir or audio_path.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path = target_dir / f"{audio_path.stem}.txt"
     transcript_path.write_text(transcript, encoding="utf-8")
 
     word_count = len(transcript.split())

@@ -20,7 +20,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
-      # Tests mock ffmpeg, yt-dlp, Whisper and the Claude API, so only dev tools are needed
+      # Tests mock ffmpeg, Whisper and the Claude API, so only dev tools are needed
       # (installing Whisper would pull in multiple GB of PyTorch).
       - name: Install dev dependencies
         run: pip install -r requirements-dev.txt

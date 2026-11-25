@@ -1,10 +1,12 @@
-# Run with: docker compose run pipeline "VIDEO_URL"
-# Or:       docker compose run pipeline "VIDEO_URL" --skip-analysis
+# Put your recording in ./input, then:
+#   docker compose run --rm pipeline /input/lecture.mp4
+#   docker compose run --rm pipeline /input/lecture.mp4 --skip-analysis
 
 services:
   pipeline:
     build: .
     env_file: .env
     volumes:
-      - ./output:/output            # Access output files on your host machine
+      - ./input:/input:ro                 # Your recordings (read-only: the pipeline never modifies them)
+      - ./output:/output                  # Access output files on your host machine
       - ./instructions:/app/instructions  # Use custom instructions without rebuilding

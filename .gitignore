@@ -10,7 +10,8 @@ __pycache__/
 dist/
 build/
 
-# Output files
+# Input recordings and output files
+input/
 output/
 *.mp3
 *.mp4
@@ -30,3 +31,6 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# Never commit or ship credential documents
+*.docx

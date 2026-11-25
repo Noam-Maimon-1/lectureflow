@@ -47,12 +47,12 @@ class TestConfig:
     def test_from_env_reads_environment(self):
         with patch.dict(os.environ, {
             "LP_WHISPER_MODEL": "medium",
-            "LP_KEEP_VIDEO": "true",
+            "LP_SKIP_HTML": "true",
             "ANTHROPIC_API_KEY": "test-key",
         }):
             config = PipelineConfig.from_env()
             assert config.whisper_model == "medium"
-            assert config.keep_video is True
+            assert config.skip_html is True
             assert config.anthropic_api_key == "test-key"
 
 
@@ -64,7 +64,7 @@ class TestPipelineResult:
     def test_total_duration(self):
         result = PipelineResult(
             success=True,
-            stage_durations={"download": 5.0, "convert": 2.0, "transcribe": 30.0},
+            stage_durations={"convert": 2.0, "transcribe": 30.0, "analyze": 5.0},
         )
         assert result.total_duration == 37.0
 
@@ -79,79 +79,84 @@ class TestPipelineResult:
 
 # ── Pipeline orchestration tests ───────────────────────────────────
 
-class TestPipelineLocalFile:
-    """Pipeline should skip the download stage when a local file is provided."""
+def _fake_ffmpeg(cmd, **kwargs):
+    """Stand-in for subprocess.run: writes the output file ffmpeg would create."""
+    Path(cmd[-1]).write_bytes(b"fake audio")
+    return MagicMock(returncode=0)
 
-    @patch("src.pipeline.download_video")
-    @patch("src.pipeline.transcribe")
-    @patch("src.pipeline.extract_audio")
-    def test_local_file_skips_download(self, mock_extract, mock_transcribe, mock_download, tmp_path):
-        from src.pipeline import run
 
-        local_video = tmp_path / "lecture.mp4"
-        local_video.write_bytes(b"fake video content")
-
-        audio_path = tmp_path / "lecture.mp3"
-        mock_extract.return_value = audio_path
-        mock_transcribe.return_value = ("transcript text", tmp_path / "lecture.txt")
-
-        config = PipelineConfig(skip_analysis=True, output_dir=tmp_path)
-        result = run(None, config, local_file=str(local_video))
-
-        assert result.success is True
-        assert result.download_skipped is True
-        assert result.video_path == local_video
-        assert "download" not in result.stage_durations
-
-        mock_download.assert_not_called()
-        # The user's own file must never be deleted, even when keep_video is False.
-        assert config.keep_video is False
-        mock_extract.assert_called_once_with(local_video, keep_video=True)
+class TestPipelineRun:
+    """The pipeline runs from a user-provided file and never touches that file."""
 
     @patch("src.pipeline.transcribe")
-    @patch("src.pipeline.download_video")
-    def test_local_file_is_not_deleted_after_conversion(self, mock_download, mock_transcribe, tmp_path):
-        """End-to-end through the real converter (ffmpeg mocked): the input video survives."""
+    def test_video_input_runs_and_keeps_original(self, mock_transcribe, tmp_path):
         from src.pipeline import run
 
-        local_video = tmp_path / "lecture.mp4"
-        local_video.write_bytes(b"fake video content")
-        mock_transcribe.return_value = ("transcript text", tmp_path / "lecture.txt")
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        video = input_dir / "lecture.mp4"
+        video.write_bytes(b"fake video content")
+        output_dir = tmp_path / "out"
+        mock_transcribe.return_value = ("transcript text", output_dir / "lecture.txt")
 
-        def fake_ffmpeg(cmd, **kwargs):
-            Path(cmd[-1]).write_bytes(b"fake audio")
-            return MagicMock(returncode=0)
-
-        with patch("src.converter.subprocess.run", side_effect=fake_ffmpeg):
-            config = PipelineConfig(skip_analysis=True, output_dir=tmp_path)
-            result = run(None, config, local_file=str(local_video))
+        with patch("src.converter.subprocess.run", side_effect=_fake_ffmpeg):
+            config = PipelineConfig(skip_analysis=True, output_dir=output_dir)
+            result = run(video, config)
 
         assert result.success is True
-        assert local_video.exists()
+        assert result.input_path == video
+        assert result.audio_path == output_dir / "lecture.mp3"
+        assert list(result.stage_durations) == ["convert", "transcribe"]
+        # The user's file is untouched and nothing was written next to it.
+        assert video.read_bytes() == b"fake video content"
+        assert sorted(p.name for p in input_dir.iterdir()) == ["lecture.mp4"]
+        mock_transcribe.assert_called_once_with(
+            output_dir / "lecture.mp3", model_name="base", output_dir=output_dir
+        )
+
+    @patch("src.pipeline.transcribe")
+    def test_audio_input_skips_ffmpeg(self, mock_transcribe, tmp_path):
+        from src.pipeline import run
+
+        audio = tmp_path / "lecture.m4a"
+        audio.write_bytes(b"fake audio")
+        mock_transcribe.return_value = ("transcript text", tmp_path / "out" / "lecture.txt")
+
+        with patch("src.converter.subprocess.run") as mock_run:
+            result = run(audio, PipelineConfig(skip_analysis=True, output_dir=tmp_path / "out"))
+
+        assert result.success is True
+        assert result.audio_path == audio
+        mock_run.assert_not_called()
+
+    @patch("src.pipeline.transcribe")
+    def test_missing_input_fails_at_convert(self, mock_transcribe, tmp_path):
+        from src.pipeline import run
+
+        result = run(tmp_path / "nope.mp4", PipelineConfig(skip_analysis=True, output_dir=tmp_path))
+
+        assert result.success is False
+        assert "not found" in result.error
+        mock_transcribe.assert_not_called()
 
 
 # ── Converter tests ──────────────────────────────────────────────
 
 class TestConverter:
-    """Converter should call ffmpeg correctly."""
+    """Converter should call ffmpeg correctly and write into the output directory."""
 
-    @patch("src.converter.subprocess.run")
+    @patch("src.converter.subprocess.run", side_effect=_fake_ffmpeg)
     def test_extract_audio_calls_ffmpeg(self, mock_run, tmp_path):
         from src.converter import extract_audio
 
-        # Create a fake video file
         video = tmp_path / "lecture.mp4"
         video.write_bytes(b"fake video content")
+        output_dir = tmp_path / "out"
 
-        # Mock ffmpeg success + create the expected output
-        audio_path = tmp_path / "lecture.mp3"
-        audio_path.write_bytes(b"fake audio")
+        result = extract_audio(video, output_dir)
 
-        mock_run.return_value = MagicMock(returncode=0)
-
-        result = extract_audio(video, keep_video=True)
-
-        assert result.suffix == ".mp3"
+        assert result == output_dir / "lecture.mp3"
+        assert video.exists()
         mock_run.assert_called_once()
 
         # Verify ffmpeg was called with -vn (no video)
@@ -166,7 +171,7 @@ class TestConverter:
         audio = tmp_path / "lecture.mp3"
         audio.write_bytes(b"fake audio content")
 
-        result = extract_audio(audio, keep_video=True)
+        result = extract_audio(audio, tmp_path / "out")
 
         assert result == audio
         mock_run.assert_not_called()
@@ -181,45 +186,46 @@ class TestConverter:
         mock_run.return_value = MagicMock(returncode=1, stderr="codec error")
 
         with pytest.raises(ConversionError):
-            extract_audio(video)
+            extract_audio(video, tmp_path)
+
+    @patch("src.converter.subprocess.run", side_effect=FileNotFoundError)
+    def test_extract_audio_reports_missing_ffmpeg(self, mock_run, tmp_path):
+        from src.converter import ConversionError, extract_audio
+
+        video = tmp_path / "lecture.mp4"
+        video.write_bytes(b"fake")
+
+        with pytest.raises(ConversionError, match="ffmpeg not found"):
+            extract_audio(video, tmp_path)
 
 
-# ── Downloader tests ────────────────────────────────────────────
+# ── Transcriber tests ────────────────────────────────────────────
 
-class TestDownloader:
-    """Downloader should try yt-dlp first, then fall back to curl."""
+class TestTranscriber:
+    """Transcriber should save the transcript to the output directory."""
 
-    @patch("src.downloader._try_curl")
-    @patch("src.downloader._try_ytdlp")
-    def test_tries_ytdlp_first(self, mock_ytdlp, mock_curl, tmp_path):
-        from src.downloader import download_video
+    def test_transcript_written_to_output_dir(self, tmp_path):
+        import sys
+        import types
 
-        expected = tmp_path / "lecture.mp4"
-        expected.write_bytes(b"video")
-        mock_ytdlp.return_value = expected
+        from src.transcriber import transcribe
 
-        config = PipelineConfig(output_dir=tmp_path)
-        result = download_video("https://example.com/video.mp4", config)
+        model = MagicMock()
+        model.transcribe.return_value = {"text": "  hello lecture  "}
+        fake_whisper = types.SimpleNamespace(load_model=lambda name: model)
 
-        assert result == expected
-        mock_ytdlp.assert_called_once()
-        mock_curl.assert_not_called()
+        audio = tmp_path / "input" / "lecture.m4a"
+        audio.parent.mkdir()
+        audio.write_bytes(b"fake audio")
+        output_dir = tmp_path / "out"
 
-    @patch("src.downloader._try_curl")
-    @patch("src.downloader._try_ytdlp")
-    def test_falls_back_to_curl(self, mock_ytdlp, mock_curl, tmp_path):
-        from src.downloader import download_video
+        with patch.dict(sys.modules, {"whisper": fake_whisper}):
+            text, path = transcribe(audio, model_name="tiny", output_dir=output_dir)
 
-        mock_ytdlp.side_effect = RuntimeError("yt-dlp not found")
-
-        expected = tmp_path / "lecture.mp4"
-        expected.write_bytes(b"video")
-        mock_curl.return_value = expected
-
-        config = PipelineConfig(output_dir=tmp_path, download_retries=1)
-        result = download_video("https://example.com/video.mp4", config)
-
-        assert result == expected
+        assert text == "hello lecture"
+        assert path == output_dir / "lecture.txt"
+        assert path.read_text(encoding="utf-8") == "hello lecture"
+        assert sorted(p.name for p in audio.parent.iterdir()) == ["lecture.m4a"]
 
 
 # ── Analyzer tests ───────────────────────────────────────────────

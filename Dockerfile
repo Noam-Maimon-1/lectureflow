@@ -3,15 +3,15 @@
 # runs identically on any machine. No "works on my laptop" issues.
 #
 # Build:  docker build -t lecture-pipeline .
-# Run:    docker run --env-file .env -v ~/lecture_output:/output lecture-pipeline "VIDEO_URL"
+# Run:    docker run --rm --env-file .env -v "$PWD/input:/input:ro" -v "$PWD/output:/output" \
+#             lecture-pipeline /input/lecture.mp4
 
 FROM python:3.12-slim
 
 # Install system dependencies
 # ffmpeg: audio/video conversion
-# curl: fallback downloader
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl && \
+    apt-get install -y --no-install-recommends ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

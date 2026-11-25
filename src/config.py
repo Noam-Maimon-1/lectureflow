@@ -18,11 +18,6 @@ class PipelineConfig:
     output_dir: Path = field(default_factory=lambda: Path.home() / "lecture_pipeline_output")
     instructions_file: Path | None = None
 
-    # Downloader
-    download_retries: int = 3
-    download_timeout: int = 300  # seconds
-    referer: str | None = None  # Optional Referer header for downloads
-
     # Transcriber
     whisper_model: str = "base"  # tiny | base | small | medium | large
 
@@ -32,7 +27,6 @@ class PipelineConfig:
     claude_max_tokens: int = 16000
 
     # Pipeline behavior
-    keep_video: bool = False
     skip_analysis: bool = False  # True = stop after transcription
     skip_html: bool = False       # True = skip HTML rendering
 
@@ -47,14 +41,10 @@ class PipelineConfig:
         return cls(
             output_dir=Path(os.getenv("LP_OUTPUT_DIR", str(Path.home() / "lecture_pipeline_output"))),
             instructions_file=Path(f) if (f := os.getenv("LP_INSTRUCTIONS_FILE")) else None,
-            download_retries=int(os.getenv("LP_DOWNLOAD_RETRIES", "3")),
-            download_timeout=int(os.getenv("LP_DOWNLOAD_TIMEOUT", "300")),
-            referer=os.getenv("LP_REFERER"),
             whisper_model=os.getenv("LP_WHISPER_MODEL", "base"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
             claude_model=os.getenv("LP_CLAUDE_MODEL", "claude-sonnet-4-5"),
             claude_max_tokens=int(os.getenv("LP_CLAUDE_MAX_TOKENS", "16000")),
-            keep_video=os.getenv("LP_KEEP_VIDEO", "false").lower() == "true",
             skip_analysis=os.getenv("LP_SKIP_ANALYSIS", "false").lower() == "true",
             skip_html=os.getenv("LP_SKIP_HTML", "false").lower() == "true",
         )
