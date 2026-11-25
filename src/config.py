@@ -31,8 +31,9 @@ class PipelineConfig:
 
     # Analyzer (Claude API)
     anthropic_api_key: str | None = None
-    claude_model: str = "claude-sonnet-4-5"
-    claude_max_tokens: int = 16000
+    claude_model: str = "claude-sonnet-5-5"
+    claude_max_tokens: int = 64000  # covers thinking + the JSON study guide (the request is streamed)
+    claude_effort: str = "low"  # low | medium | high | xhigh | max — how much Claude thinks before answering
 
     # Pipeline behavior
     skip_analysis: bool = False  # True = stop after transcription
@@ -54,8 +55,9 @@ class PipelineConfig:
             groq_api_key=os.getenv("GROQ_API_KEY"),
             groq_model=os.getenv("LP_GROQ_MODEL", "whisper-large-v3"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-            claude_model=os.getenv("LP_CLAUDE_MODEL", "claude-sonnet-4-5"),
-            claude_max_tokens=int(os.getenv("LP_CLAUDE_MAX_TOKENS", "16000")),
+            claude_model=os.getenv("LP_CLAUDE_MODEL", "claude-sonnet-5-5"),
+            claude_max_tokens=int(os.getenv("LP_CLAUDE_MAX_TOKENS", "64000")),
+            claude_effort=os.getenv("LP_CLAUDE_EFFORT", "low").strip().lower(),
             skip_analysis=os.getenv("LP_SKIP_ANALYSIS", "false").lower() == "true",
             skip_html=os.getenv("LP_SKIP_HTML", "false").lower() == "true",
         )
@@ -81,6 +83,8 @@ class PipelineConfig:
                 "Set it in .env or use --transcriber local. "
                 "Get a key at: https://console.groq.com/keys"
             )
+        if self.claude_effort not in ("low", "medium", "high", "xhigh", "max"):
+            errors.append(f"Invalid Claude effort: {self.claude_effort!r}. Choose low, medium, high, xhigh or max.")
         if self.whisper_model not in ("tiny", "base", "small", "medium", "large"):
             errors.append(f"Invalid whisper model: {self.whisper_model}")
         return errors

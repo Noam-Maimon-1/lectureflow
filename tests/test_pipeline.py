@@ -535,17 +535,70 @@ class TestGroqRetry:
 class TestAnalyzer:
     """Analyzer should parse Claude JSON, validate keys, and write outputs."""
 
-    def _make_client(self, text: str):
-        from unittest.mock import MagicMock
+    def _make_client(self, text: str, stop_reason: str = "end_turn", stop_details=None):
+        """Fake client whose streamed reply looks like Sonnet 5.5's: an empty thinking block, then text."""
+        import types
 
-        response = MagicMock()
-        response.content = [MagicMock(text=text)]
-
+        response = types.SimpleNamespace(
+            content=[
+                types.SimpleNamespace(type="thinking", thinking=""),  # display defaults to "omitted"
+                types.SimpleNamespace(type="text", text=text),
+            ],
+            stop_reason=stop_reason,
+            stop_details=stop_details,
+        )
         client = MagicMock()
-        messages = MagicMock()
-        messages.create.return_value = response
-        client.messages = messages
+        client.beta.messages.stream.return_value.__enter__.return_value.get_final_message.return_value = response
         return client
+
+    def _run(self, tmp_path, client):
+        import sys
+        import types
+
+        from src.analyzer import analyze
+
+        fake_anthropic = types.SimpleNamespace(Anthropic=lambda api_key: client)
+        with patch.dict(sys.modules, {"anthropic": fake_anthropic}):
+            config = PipelineConfig(anthropic_api_key="k", output_dir=tmp_path, instructions_file=tmp_path / "inst.txt")
+            config.instructions_file.write_text("instructions")
+            return analyze("transcript text", config, output_dir=tmp_path)
+
+    _VALID = {
+        "title": "T",
+        "summary": "S",
+        "topics": [],
+        "review_questions": [{"question": "Q?", "answer": "A."}],
+    }
+
+    def test_request_uses_streaming_effort_and_refusal_fallback(self, tmp_path):
+        import json
+
+        client = self._make_client(json.dumps(self._VALID))
+        self._run(tmp_path, client)
+
+        kwargs = client.beta.messages.stream.call_args.kwargs
+        assert kwargs["model"] == "claude-sonnet-5-5"
+        assert kwargs["max_tokens"] == 64000
+        assert kwargs["output_config"] == {"effort": "low"}
+        assert kwargs["betas"] == ["server-side-fallback-2026-07-01"]
+        assert kwargs["extra_body"] == {"fallbacks": "default"}
+
+    def test_refusal_raises_with_category(self, tmp_path):
+        import types
+
+        from src.analyzer import AnalysisError
+
+        client = self._make_client("", stop_reason="refusal", stop_details=types.SimpleNamespace(category="cyber"))
+        with pytest.raises(AnalysisError, match="refusal category: cyber"):
+            self._run(tmp_path, client)
+        assert not (tmp_path / "study_guide.json").exists()
+
+    def test_truncated_response_raises(self, tmp_path):
+        from src.analyzer import AnalysisError
+
+        client = self._make_client('{"title": "cut off', stop_reason="max_tokens")
+        with pytest.raises(AnalysisError, match="LP_CLAUDE_MAX_TOKENS"):
+            self._run(tmp_path, client)
 
     def test_analyzer_valid_json(self, tmp_path):
         from src.analyzer import analyze

@@ -54,9 +54,16 @@ def analyze(transcript: str, config: PipelineConfig, output_dir: Path) -> tuple[
 
     try:
         client = anthropic.Anthropic(api_key=config.anthropic_api_key)
-        message = client.messages.create(
+        # Streaming: thinking counts toward max_tokens, so the budget is large (64K by default),
+        # and long non-streaming requests risk HTTP timeouts.
+        with client.beta.messages.stream(
             model=config.claude_model,
             max_tokens=config.claude_max_tokens,
+            output_config={"effort": config.claude_effort},
+            # If a safety classifier declines (e.g. a security lecture flagged as "cyber"),
+            # the API retries on a fallback model inside the same request.
+            betas=["server-side-fallback-2026-07-01"],
+            extra_body={"fallbacks": "default"},
             messages=[
                 {
                     "role": "user",
@@ -67,11 +74,24 @@ def analyze(transcript: str, config: PipelineConfig, output_dir: Path) -> tuple[
                     ),
                 }
             ],
-        )
+        ) as stream:
+            message = stream.get_final_message()
     except Exception as e:
         raise AnalysisError(f"Claude API call failed: {e}") from e
 
-    study_guide_text = message.content[0].text
+    # Check why the model stopped before reading the content.
+    if message.stop_reason == "refusal":
+        details = getattr(message, "stop_details", None)
+        category = getattr(details, "category", None) or "unspecified"
+        raise AnalysisError(f"Claude declined to process this transcript (refusal category: {category}).")
+    if message.stop_reason == "max_tokens":
+        raise AnalysisError(
+            f"Claude's response was cut off at max_tokens={config.claude_max_tokens}. "
+            "Raise LP_CLAUDE_MAX_TOKENS and run again."
+        )
+
+    # Read text blocks by type: the response can start with a (possibly empty) thinking block.
+    study_guide_text = "".join(block.text for block in message.content if block.type == "text")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
